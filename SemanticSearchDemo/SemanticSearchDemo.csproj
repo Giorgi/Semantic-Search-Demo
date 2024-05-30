@@ -7,4 +7,19 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <LocalEmbeddingsModelUrl>https://huggingface.co/optimum/all-MiniLM-L6-v2/resolve/main/model.onnx</LocalEmbeddingsModelUrl>
+    <LocalEmbeddingsVocabUrl>https://huggingface.co/optimum/all-MiniLM-L6-v2/resolve/main/vocab.txt</LocalEmbeddingsVocabUrl>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="SmartComponents.LocalEmbeddings" Version="0.1.0-preview10148" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <None Update="News.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
