@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using SmartComponents.LocalEmbeddings;
 using System.Text.Json;
+using Spectre.Console;
 
 namespace SemanticSearchDemo
 {
@@ -21,12 +22,14 @@ namespace SemanticSearchDemo
             using var embedder = new LocalEmbedder();
             var lines = File.ReadLines(@"News.json");
 
+            AnsiConsole.MarkupLine("[Green]Indexing data ...[/]");
             var stopwatch = Stopwatch.StartNew();
 
             int count = 0;
 
             var newsItems = lines
                 .Select(line => JsonSerializer.Deserialize<NewsItem>(line, JsonOptions))
+                //.Take(1000)
                 .Where(item => Categories.Contains(item.Category))
                 .Select(item =>
                 {
@@ -35,7 +38,7 @@ namespace SemanticSearchDemo
                     count++;
                     if (count % 10000 == 0)
                     {
-                        Console.WriteLine($"Indexed {count} items");
+                        AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {count} items[/]");
                     }
 
                     return item;
@@ -43,20 +46,31 @@ namespace SemanticSearchDemo
 
             stopwatch.Stop();
 
-            Console.WriteLine($"Indexed {newsItems.Count} items in {stopwatch.Elapsed}, enter search text {Environment.NewLine}");
+            AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {newsItems.Count} items in {stopwatch.Elapsed}, enter search text {Environment.NewLine}[/]");
 
             do
             {
-                var query = embedder.Embed(Console.ReadLine());
+                var prompt = AnsiConsole.Ask<string>("Enter search text:");
                 Console.WriteLine();
+
+                stopwatch.Restart();
+
+                var query = embedder.Embed(prompt);
 
                 var results = LocalEmbedder.FindClosestWithScore(query, newsItems.Select(item => (item, item.Embedding)), 10);
 
+                stopwatch.Stop();
+
+                var table = new Table();
+
+                table.AddColumn("Score").AddColumn("Result",column => column.Footer($"[Green]Search time: {stopwatch.ElapsedMilliseconds} Milliseconds[/]"));
+
                 foreach (var newsItem in results)
                 {
-                    Console.WriteLine($"{newsItem.Similarity}  {newsItem.Item.Headline}");
+                    table.AddRow(newsItem.Similarity.ToString(), newsItem.Item.Headline);
                 }
-                Console.WriteLine();
+
+                AnsiConsole.Write(table);
 
             } while (true);
         }
