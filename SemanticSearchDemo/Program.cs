@@ -51,18 +51,22 @@ namespace SemanticSearchDemo
 
                 stopwatch.Stop();
 
-                var table = new Table();
-
-                table.AddColumn("Score").AddColumn("Result", column => column.Footer($"[Green]Search time: {stopwatch.ElapsedMilliseconds} Milliseconds[/]"));
-
-                foreach (var newsItem in results)
-                {
-                    table.AddRow(newsItem.Similarity.ToString(), newsItem.Item.Headline);
-                }
-
-                AnsiConsole.Write(table);
-
+                RenderResults(stopwatch, results);
             } while (true);
+        }
+
+        private static void RenderResults(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)
+        {
+            var table = new Table();
+
+            table.AddColumn("Score").AddColumn("Result", column => column.Footer($"[Green]Search time: {stopwatch.ElapsedMilliseconds} Milliseconds[/]"));
+
+            foreach (var newsItem in results)
+            {
+                table.AddRow(newsItem.Similarity.ToString(), newsItem.Item.Headline);
+            }
+
+            AnsiConsole.Write(table);
         }
 
         private static async Task<List<NewsItem>> GetNewsItems()
