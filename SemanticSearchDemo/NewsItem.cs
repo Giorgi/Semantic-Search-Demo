@@ -1,4 +1,5 @@
-﻿using SmartComponents.LocalEmbeddings;
+﻿using Pgvector;
+using SmartComponents.LocalEmbeddings;
 
 namespace SemanticSearchDemo;
 
@@ -15,4 +16,6 @@ public class NewsItem
     public EmbeddingF32 Embedding { get; set; }
 
     public byte[] EmbeddingBuffer { get; set; }
+
+    public Vector? EmbeddingVector { get; set; }
 }

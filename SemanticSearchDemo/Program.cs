@@ -1,5 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Pgvector;
+using Pgvector.EntityFrameworkCore;
 using SmartComponents.LocalEmbeddings;
 using Spectre.Console;
 using System.Diagnostics;
@@ -43,17 +45,48 @@ namespace SemanticSearchDemo
                 var prompt = AnsiConsole.Ask<string>("Enter search text:");
                 Console.WriteLine();
 
-                var stopwatch = Stopwatch.StartNew();
-
                 var query = embedder.Embed(prompt);
 
-                var results = LocalEmbedder.FindClosestWithScore(query, newsItems.Select(item => (item, item.Embedding)), 10);
+                var (stopwatch, results) = SearchInMemory(query, newsItems);
+                RenderResults(stopwatch, results);
 
-                stopwatch.Stop();
-
+                (stopwatch, results) = await SearchInPostgres(query);
                 RenderResults(stopwatch, results);
             } while (true);
         }
+
+
+        private static async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInPostgres(EmbeddingF32 query)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var queryVector = new Vector(query.Values);
+
+            await using var context = new PostgresNewsContext(config);
+
+            var queryable = context.NewsItems
+                                   .OrderBy(item => item.EmbeddingVector!.CosineDistance(queryVector))
+                                   .Take(10)
+                                   .Select(item => new { item, distance = item.EmbeddingVector!.CosineDistance(queryVector) });
+            var matches = await queryable.ToListAsync();
+
+            stopwatch.Stop();
+
+            var results = matches.Select(arg => new SimilarityScore<NewsItem>(1 - (float)arg.distance, arg.item)).ToArray();
+
+            return (stopwatch, results);
+        }
+
+        private static (Stopwatch stopwatch, SimilarityScore<NewsItem>[] results) SearchInMemory(EmbeddingF32 query, List<NewsItem> newsItems)
+        {
+            var stopwatch = Stopwatch.StartNew();
+
+            var results = LocalEmbedder.FindClosestWithScore(query, newsItems.Select(item => (item, item.Embedding)), 10);
+
+            stopwatch.Stop();
+
+            return (stopwatch, results);
+        }
+
 
         private static void RenderResults(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)
         {
@@ -68,6 +101,7 @@ namespace SemanticSearchDemo
 
             AnsiConsole.Write(table);
         }
+
 
         private static async Task<List<NewsItem>> GetNewsItems()
         {
@@ -99,6 +133,7 @@ namespace SemanticSearchDemo
 
                     item.Embedding = embedding;
                     item.EmbeddingBuffer = embedding.Buffer.ToArray();
+                    item.EmbeddingVector = new Vector(embedding.Values);
 
                     count++;
                     if (count % 10000 == 0)
@@ -120,9 +155,15 @@ namespace SemanticSearchDemo
 
         private static async Task SaveToDatabase(List<NewsItem> newsItems)
         {
-            await using var context = new SqlServerNewsContext(config);
-            context.NewsItems.AddRange(newsItems);
-            await context.SaveChangesAsync();
+            await using var sqlServerContext = new SqlServerNewsContext(config);
+            await sqlServerContext.Database.EnsureCreatedAsync();
+            sqlServerContext.NewsItems.AddRange(newsItems);
+            await sqlServerContext.SaveChangesAsync();
+
+            await using var postgresContext = new PostgresNewsContext(config);
+            await postgresContext.Database.EnsureCreatedAsync();
+            postgresContext.NewsItems.AddRange(newsItems);
+            await postgresContext.SaveChangesAsync();
         }
     }
 }
