@@ -26,6 +26,19 @@ namespace SemanticSearchDemo
 
         private static async Task Main(string[] args)
         {
+            await using (var context = new PostgresNewsContext(config))
+            {
+                if ((await context.Database.GetPendingMigrationsAsync()).Any())
+                {
+                    var stopwatch = new Stopwatch();
+                    stopwatch.Start();
+                    await context.Database.MigrateAsync(); 
+                    stopwatch.Stop();
+
+                    AnsiConsole.MarkupLine($"[Green]Migrated in {stopwatch.Elapsed}[/]");
+                }
+            }
+
             using var embedder = new LocalEmbedder();
 
             var newsItems = await GetNewsItems();
@@ -106,6 +119,7 @@ namespace SemanticSearchDemo
         private static async Task<List<NewsItem>> GetNewsItems()
         {
             await using var context = new SqlServerNewsContext(config);
+            await context.Database.EnsureCreatedAsync();
             var items = await context.NewsItems.ToListAsync();
 
             foreach (var item in items)
@@ -156,12 +170,10 @@ namespace SemanticSearchDemo
         private static async Task SaveToDatabase(List<NewsItem> newsItems)
         {
             await using var sqlServerContext = new SqlServerNewsContext(config);
-            await sqlServerContext.Database.EnsureCreatedAsync();
             sqlServerContext.NewsItems.AddRange(newsItems);
             await sqlServerContext.SaveChangesAsync();
 
             await using var postgresContext = new PostgresNewsContext(config);
-            await postgresContext.Database.EnsureCreatedAsync();
             postgresContext.NewsItems.AddRange(newsItems);
             await postgresContext.SaveChangesAsync();
         }

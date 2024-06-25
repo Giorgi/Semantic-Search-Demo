@@ -25,6 +25,11 @@ class PostgresNewsContext(IConfiguration config) : DbContext
         modelBuilder.Entity<NewsItem>().Property(item => item.Category).HasMaxLength(30);
         modelBuilder.Entity<NewsItem>().Property(item => item.ShortDescription).HasMaxLength(4000);
         modelBuilder.Entity<NewsItem>().Property(item => item.Authors).HasMaxLength(400);
+
+        modelBuilder.Entity<NewsItem>()
+            .HasIndex(i => i.EmbeddingVector)
+            .HasMethod("hnsw")
+            .HasOperators("vector_cosine_ops");
     }
 
     public DbSet<NewsItem> NewsItems { get; set; }
