@@ -11,7 +11,7 @@ using SemanticSearchDemo;
 
 namespace SemanticSearchDemo.Migrations
 {
-    [DbContext(typeof(PostgresNewsContext))]
+    [DbContext(typeof(PgVectorPostgresNewsContext))]
     partial class PostgresNewsContextModelSnapshot : ModelSnapshot
     {
         protected override void BuildModel(ModelBuilder modelBuilder)

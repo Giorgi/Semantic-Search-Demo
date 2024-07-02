@@ -12,7 +12,7 @@ using SemanticSearchDemo;
 
 namespace SemanticSearchDemo.Migrations
 {
-    [DbContext(typeof(PostgresNewsContext))]
+    [DbContext(typeof(PgVectorPostgresNewsContext))]
     [Migration("20240625124158_InitialCreate")]
     partial class InitialCreate
     {
