@@ -17,3 +17,4 @@ The generated embeddings are stored in a PostgreSQL database and queried with En
  - [Postgres is all you need, even for vectors](https://anyblockers.com/posts/postgres-is-all-you-need-even-for-vectors)
  - [Vector Indexes in Postgres using pgvector: IVFFlat vs HNSW](https://tembo.io/blog/vector-indexes-in-pgvector)
  - [Understanding vector search and HNSW index with pgvector](https://neon.tech/blog/understanding-vector-search-and-hnsw-index-with-pgvector)
+ - [Using Vector Databases for Multimodal Embeddings and Search - Zain Hasan - NDC London 2024](https://www.youtube.com/watch?v=2O81YU_VHDc)
