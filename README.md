@@ -13,6 +13,7 @@ The generated embeddings are stored in a PostgreSQL database and queried with En
  - [Distance Metrics in Vector Search](https://weaviate.io/blog/distance-metrics-in-vector-search)
  - [Why is Vector Search so fast?](https://weaviate.io/blog/why-is-vector-search-so-fast)
  - [Vectors are the new JSON in PostgreSQL](https://jkatz05.com/post/postgres/vectors-json-postgresql/)
+ - [Vectors are the new JSON (PGConf.EU 2023 Recording)](https://www.youtube.com/watch?v=D_1zunKblAU)
  - [Postgres is all you need, even for vectors](https://anyblockers.com/posts/postgres-is-all-you-need-even-for-vectors)
  - [Vector Indexes in Postgres using pgvector: IVFFlat vs HNSW](https://tembo.io/blog/vector-indexes-in-pgvector)
  - [Understanding vector search and HNSW index with pgvector](https://neon.tech/blog/understanding-vector-search-and-hnsw-index-with-pgvector)
