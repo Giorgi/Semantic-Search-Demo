@@ -27,18 +27,7 @@ namespace SemanticSearchDemo
 
         private static async Task Main(string[] args)
         {
-            await using (var context = new PgVectorPostgresNewsContext(config))
-            {
-                if ((await context.Database.GetPendingMigrationsAsync()).Any())
-                {
-                    var stopwatch = new Stopwatch();
-                    stopwatch.Start();
-                    await context.Database.MigrateAsync();
-                    stopwatch.Stop();
-
-                    AnsiConsole.MarkupLine($"[Green]Migrated in {stopwatch.Elapsed}[/]");
-                }
-            }
+            await MigrateDatabase();
 
             using var embedder = new LocalEmbedder();
             EmbeddingClient openAIClient = new(model: "text-embedding-3-small", config["OpenAI:ApiKey"]);
@@ -73,6 +62,20 @@ namespace SemanticSearchDemo
 
                 RenderResults(stopwatch, results);
             } while (true);
+        }
+
+        private static async Task MigrateDatabase()
+        {
+            await using var context = new PgVectorPostgresNewsContext(config);
+            if ((await context.Database.GetPendingMigrationsAsync()).Any())
+            {
+                var stopwatch = new Stopwatch();
+                stopwatch.Start();
+                await context.Database.MigrateAsync();
+                stopwatch.Stop();
+
+                AnsiConsole.MarkupLine($"[Green]Migrated in {stopwatch.Elapsed}[/]");
+            }
         }
 
 
@@ -165,10 +168,10 @@ namespace SemanticSearchDemo
             var newsItems = lines
                 .Select(line => JsonSerializer.Deserialize<NewsItem>(line, JsonOptions))
                 //.Take(1000)
-                .Where(item => Categories.Contains(item.Category))
+                .Where(item => Categories.Contains(item!.Category))
                 .Select(item =>
                 {
-                    var embedding = embedder.Embed(item.Headline);
+                    var embedding = embedder.Embed(item!.Headline);
 
                     item.Embedding = embedding;
                     item.EmbeddingBuffer = embedding.Buffer.ToArray();
