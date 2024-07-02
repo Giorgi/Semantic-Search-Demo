@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using OpenAI.Embeddings;
 using Pgvector;
 using Pgvector.EntityFrameworkCore;
 using SmartComponents.LocalEmbeddings;
@@ -7,7 +8,6 @@ using Spectre.Console;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
-using OpenAI.Embeddings;
 
 namespace SemanticSearchDemo
 {
@@ -65,7 +65,7 @@ namespace SemanticSearchDemo
                 var (stopwatch, results) = SearchInMemory(query, newsItems);
                 RenderResults(stopwatch, results);
 
-                (stopwatch, results) = await SearchInPostgres(query);
+                (stopwatch, results) = await SearchInPostgres(new Vector(query.Values));
                 RenderResults(stopwatch, results);
 
                 var searchQuery = await openAIClient.GenerateEmbeddingAsync(prompt);
@@ -76,17 +76,16 @@ namespace SemanticSearchDemo
         }
 
 
-        private static async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInPostgres(EmbeddingF32 query)
+        private static async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInPostgres(Vector query)
         {
             var stopwatch = Stopwatch.StartNew();
-            var queryVector = new Vector(query.Values);
 
             await using var context = new PgVectorPostgresNewsContext(config);
 
             var queryable = context.NewsItems
-                                   .OrderBy(item => item.EmbeddingVector!.CosineDistance(queryVector))
+                                   .OrderBy(item => item.EmbeddingVector!.CosineDistance(query))
                                    .Take(10)
-                                   .Select(item => new { item, distance = item.EmbeddingVector!.CosineDistance(queryVector) });
+                                   .Select(item => new { item, distance = item.EmbeddingVector!.CosineDistance(query) });
             var matches = await queryable.ToListAsync();
 
             stopwatch.Stop();
