@@ -13,24 +13,24 @@ namespace SemanticSearchDemo
 {
     internal class Program
     {
-        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
         {
             PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
         };
 
-        private static readonly HashSet<string> Categories = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase)
+        private static readonly HashSet<string> Categories = new(StringComparer.InvariantCultureIgnoreCase)
         {
             "POLITICS", "SCIENCE", "TECH", "WORLD NEWS", "TRAVEL"
         };
 
-        private static IConfiguration config = new ConfigurationBuilder().AddUserSecrets(Assembly.GetExecutingAssembly()).Build();
+        private static readonly IConfiguration Config = new ConfigurationBuilder().AddUserSecrets(Assembly.GetExecutingAssembly()).Build();
 
         private static async Task Main(string[] args)
         {
             await MigrateDatabase();
 
             using var embedder = new LocalEmbedder();
-            EmbeddingClient openAIClient = new(model: "text-embedding-3-small", config["OpenAI:ApiKey"]);
+            EmbeddingClient openAIClient = new(model: "text-embedding-3-small", Config["OpenAI:ApiKey"]);
 
             var newsItems = await GetNewsItems();
 
@@ -58,7 +58,7 @@ namespace SemanticSearchDemo
                 RenderResults(stopwatch, results);
 
                 var searchQuery = await openAIClient.GenerateEmbeddingAsync(prompt);
-                (stopwatch, results) = await SearchInPostgresOpenAI(new Vector(searchQuery.Value.Vector));
+                (stopwatch, results) = await SearchInPostgresOpenAI(new Vector(searchQuery.Value.ToFloats()));
 
                 RenderResults(stopwatch, results);
             } while (true);
@@ -66,7 +66,7 @@ namespace SemanticSearchDemo
 
         private static async Task MigrateDatabase()
         {
-            await using var context = new PgVectorPostgresNewsContext(config);
+            await using var context = new PgVectorPostgresNewsContext(Config);
             if ((await context.Database.GetPendingMigrationsAsync()).Any())
             {
                 var stopwatch = new Stopwatch();
@@ -83,7 +83,7 @@ namespace SemanticSearchDemo
         {
             var stopwatch = Stopwatch.StartNew();
 
-            await using var context = new PgVectorPostgresNewsContext(config);
+            await using var context = new PgVectorPostgresNewsContext(Config);
 
             var queryable = context.NewsItems
                                    .OrderBy(item => item.EmbeddingVector!.CosineDistance(query))
@@ -102,7 +102,7 @@ namespace SemanticSearchDemo
         {
             var stopwatch = Stopwatch.StartNew();
 
-            await using var context = new OpenAiPostgresNewsContext(config);
+            await using var context = new OpenAiPostgresNewsContext(Config);
 
             var queryable = context.NewsItems
                                    .OrderBy(item => item.EmbeddingVector!.CosineDistance(query))
@@ -146,7 +146,7 @@ namespace SemanticSearchDemo
 
         private static async Task<List<NewsItem>> GetNewsItems()
         {
-            await using var context = new SqlServerNewsContext(config);
+            await using var context = new SqlServerNewsContext(Config);
             await context.Database.EnsureCreatedAsync();
             var items = await context.NewsItems.ToListAsync();
 
@@ -211,7 +211,7 @@ namespace SemanticSearchDemo
 
                     for (int i = 0; i < items.Length; i++)
                     {
-                        items[i].EmbeddingVector = new Vector(embeddings.Value[i].Vector);
+                        items[i].EmbeddingVector = new Vector(embeddings.Value[i].ToFloats());
                     }
 
                     return items;
@@ -222,11 +222,11 @@ namespace SemanticSearchDemo
 
         private static async Task SaveToDatabase(List<NewsItem> newsItems)
         {
-            await using var sqlServerContext = new SqlServerNewsContext(config);
+            await using var sqlServerContext = new SqlServerNewsContext(Config);
             sqlServerContext.NewsItems.AddRange(newsItems);
             await sqlServerContext.SaveChangesAsync();
 
-            await using var postgresContext = new PgVectorPostgresNewsContext(config);
+            await using var postgresContext = new PgVectorPostgresNewsContext(Config);
             postgresContext.NewsItems.AddRange(newsItems);
             await postgresContext.SaveChangesAsync();
         }
