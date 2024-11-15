@@ -30,7 +30,9 @@ namespace SemanticSearchDemo
             await MigrateDatabase();
 
             using var embedder = new LocalEmbedder();
+            
             EmbeddingClient openAIClient = new(model: "text-embedding-3-small", Config["OpenAI:ApiKey"]);
+            //await ImportEmbeddingsWithOpenAI(openAIClient);
 
             var newsItems = await GetNewsItems();
 
@@ -160,7 +162,7 @@ namespace SemanticSearchDemo
 
         private static async Task<List<NewsItem>> ImportAndIndex(LocalEmbedder embedder)
         {
-            var lines = File.ReadLines(@"News.json");
+            var lines = File.ReadLines("News.json");
 
             int count = 0;
             var stopwatch = Stopwatch.StartNew();
@@ -197,10 +199,10 @@ namespace SemanticSearchDemo
 
         private static async Task ImportEmbeddingsWithOpenAI(EmbeddingClient client)
         {
-            var lines = File.ReadLines(@"News.json");
+            var lines = File.ReadLines("News.json");
 
             var chunks = lines
-                .Select(line => JsonSerializer.Deserialize<NewsItem>(line, JsonOptions))
+                .Select(line => JsonSerializer.Deserialize<NewsItem>(line, JsonOptions)!)
                 .Where(item => Categories.Contains(item.Category) && !string.IsNullOrEmpty(item.Headline))
                 .Chunk(100);
 
@@ -209,15 +211,21 @@ namespace SemanticSearchDemo
                 {
                     var embeddings = client.GenerateEmbeddings(items.Select(i => i.Headline));
 
-                    for (int i = 0; i < items.Length; i++)
+                    for (int index = 0; index < items.Length; index++)
                     {
-                        items[i].EmbeddingVector = new Vector(embeddings.Value[i].ToFloats());
+                        items[index].EmbeddingVector = new Vector(embeddings.Value[index].ToFloats());
                     }
 
                     return items;
                 }).SelectMany(items => items).ToList();
 
-            await SaveToDatabase(newsItems);
+            await using var context = new OpenAiPostgresNewsContext(Config);
+            var created = await context.Database.EnsureCreatedAsync();
+            if (created)
+            {
+                context.NewsItems.AddRange(newsItems);
+                await context.SaveChangesAsync(); 
+            }
         }
 
         private static async Task SaveToDatabase(List<NewsItem> newsItems)
