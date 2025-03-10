@@ -27,8 +27,6 @@ namespace SemanticSearchDemo
 
         private static async Task Main(string[] args)
         {
-            await MigrateDatabase();
-
             using var embedder = new LocalEmbedder();
             
             EmbeddingClient openAIClient = new(model: "text-embedding-3-small", Config["OpenAI:ApiKey"]);
@@ -65,21 +63,6 @@ namespace SemanticSearchDemo
                 RenderResults(stopwatch, results);
             } while (true);
         }
-
-        private static async Task MigrateDatabase()
-        {
-            await using var context = new PgVectorPostgresNewsContext(Config);
-            if ((await context.Database.GetPendingMigrationsAsync()).Any())
-            {
-                var stopwatch = new Stopwatch();
-                stopwatch.Start();
-                await context.Database.MigrateAsync();
-                stopwatch.Stop();
-
-                AnsiConsole.MarkupLine($"[Green]Migrated in {stopwatch.Elapsed}[/]");
-            }
-        }
-
 
         private static async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInPostgres(Vector query)
         {
