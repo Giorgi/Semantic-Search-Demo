@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace SemanticSearchDemo;
 
-class SqlServerNewsContext(IConfiguration config) : DbContext
+class SqlServerNewsContext(IConfiguration config) : NewsItemsBaseContext
 {
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace SemanticSearchDemo;
 
-class PgVectorPostgresNewsContext(IConfiguration config) : DbContext
+class PgVectorPostgresNewsContext(IConfiguration config) : NewsItemsBaseContext
 {
     public PgVectorPostgresNewsContext() : this(null)
     {

@@ -1,8 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using OpenAI.Embeddings;
 using Pgvector;
-using Pgvector.EntityFrameworkCore;
 using SmartComponents.LocalEmbeddings;
 using Spectre.Console;
 using System.Diagnostics;
@@ -13,6 +11,10 @@ namespace SemanticSearchDemo
 {
     internal class Program
     {
+        private const string IndexLocalModel = "Index data with a local model";
+        private const string IndexOpenAI = "Index data with OpenAI";
+        private const string Search = "Search";
+
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
         {
             PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
@@ -27,123 +29,63 @@ namespace SemanticSearchDemo
 
         private static async Task Main(string[] args)
         {
-            using var embedder = new LocalEmbedder();
-            
-            EmbeddingClient openAIClient = new(model: "text-embedding-3-small", Config["OpenAI:ApiKey"]);
-            //await ImportEmbeddingsWithOpenAI(openAIClient);
+            var semanticSearch = new SemanticSearch(Config);
 
-            var newsItems = await GetNewsItems();
-
-            if (newsItems.Count == 0)
+            while (true)
             {
-                AnsiConsole.MarkupLine("[Green]Indexing data ...[/]");
-                newsItems = await ImportAndIndex(embedder);
+                var choice = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("What would you like to do?")
+                        .PageSize(10)
+                        .AddChoices(IndexLocalModel, IndexOpenAI, Search, "Quit"));
+
+                switch (choice)
+                {
+                    case IndexLocalModel:
+                        await HandleLocalEmbedderImport();
+                        break;
+                    case IndexOpenAI:
+                        await HandleOpenAIImport();
+                        break;
+                    case Search:
+                        await semanticSearch.HandleSearch();
+                        break;
+                    default:
+                        return;
+                }
             }
-            else
-            {
-                AnsiConsole.MarkupLine($"[Green]Loaded {newsItems.Count} items from database[/]");
-            }
-
-            do
-            {
-                var prompt = AnsiConsole.Ask<string>("Enter search text:");
-                Console.WriteLine();
-
-                var query = embedder.Embed(prompt);
-
-                var (stopwatch, results) = SearchInMemory(query, newsItems);
-                RenderResults(stopwatch, results);
-
-                (stopwatch, results) = await SearchInPostgres(new Vector(query.Values));
-                RenderResults(stopwatch, results);
-
-                var searchQuery = await openAIClient.GenerateEmbeddingAsync(prompt);
-                (stopwatch, results) = await SearchInPostgresOpenAI(new Vector(searchQuery.Value.ToFloats()));
-
-                RenderResults(stopwatch, results);
-            } while (true);
         }
 
-        private static async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInPostgres(Vector query)
-        {
-            var stopwatch = Stopwatch.StartNew();
-
-            await using var context = new PgVectorPostgresNewsContext(Config);
-
-            var queryable = context.NewsItems
-                                   .OrderBy(item => item.EmbeddingVector!.CosineDistance(query))
-                                   .Take(10)
-                                   .Select(item => new { item, distance = item.EmbeddingVector!.CosineDistance(query) });
-            var matches = await queryable.ToListAsync();
-
-            stopwatch.Stop();
-
-            var results = matches.Select(arg => new SimilarityScore<NewsItem>(1 - (float)arg.distance, arg.item)).ToArray();
-
-            return (stopwatch, results);
-        }
-
-        private static async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInPostgresOpenAI(Vector query)
-        {
-            var stopwatch = Stopwatch.StartNew();
-
-            await using var context = new OpenAiPostgresNewsContext(Config);
-
-            var queryable = context.NewsItems
-                                   .OrderBy(item => item.EmbeddingVector!.CosineDistance(query))
-                                   .Take(10)
-                                   .Select(item => new { item, distance = item.EmbeddingVector!.CosineDistance(query) });
-            var matches = await queryable.ToListAsync();
-
-            stopwatch.Stop();
-
-            var results = matches.Select(arg => new SimilarityScore<NewsItem>(1 - (float)arg.distance, arg.item)).ToArray();
-
-            return (stopwatch, results);
-        }
-
-        private static (Stopwatch stopwatch, SimilarityScore<NewsItem>[] results) SearchInMemory(EmbeddingF32 query, List<NewsItem> newsItems)
-        {
-            var stopwatch = Stopwatch.StartNew();
-
-            var results = LocalEmbedder.FindClosestWithScore(query, newsItems.Select(item => (item, item.Embedding)), 10);
-
-            stopwatch.Stop();
-
-            return (stopwatch, results);
-        }
-
-
-        private static void RenderResults(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)
-        {
-            var table = new Table();
-
-            table.AddColumn("Score").AddColumn("Result", column => column.Footer($"[Green]Search time: {stopwatch.ElapsedMilliseconds} Milliseconds[/]"));
-
-            foreach (var newsItem in results)
-            {
-                table.AddRow(newsItem.Similarity.ToString(), newsItem.Item.Headline);
-            }
-
-            AnsiConsole.Write(table);
-        }
-
-
-        private static async Task<List<NewsItem>> GetNewsItems()
+        private static async Task HandleLocalEmbedderImport()
         {
             await using var context = new SqlServerNewsContext(Config);
-            await context.Database.EnsureCreatedAsync();
-            var items = await context.NewsItems.ToListAsync();
 
-            foreach (var item in items)
+            if (context.NewsItems.Any())
             {
-                item.Embedding = new EmbeddingF32(item.EmbeddingBuffer);
+                AnsiConsole.MarkupLine("[Green]Data already indexed[/]");
+                return;
             }
 
-            return items;
+            using var embedder = new LocalEmbedder(); AnsiConsole.MarkupLine("[Green]Indexing data ...[/]");
+            await ImportEmbeddingsWithLocalModel(embedder);
         }
 
-        private static async Task<List<NewsItem>> ImportAndIndex(LocalEmbedder embedder)
+        private static async Task HandleOpenAIImport()
+        {
+            await using var context = new OpenAiPostgresNewsContext(Config);
+
+            if (context.NewsItems.Any())
+            {
+                AnsiConsole.MarkupLine("[Green]Data already indexed[/]");
+                return;
+            }
+
+            EmbeddingClient openAIClient = new(model: "text-embedding-3-small", Config["OpenAI:ApiKey"]);
+            await ImportEmbeddingsWithOpenAI(openAIClient);
+        }
+
+
+        private static async Task ImportEmbeddingsWithLocalModel(LocalEmbedder embedder)
         {
             var lines = File.ReadLines("News.json");
 
@@ -173,16 +115,18 @@ namespace SemanticSearchDemo
 
             stopwatch.Stop();
 
-            await SaveToDatabase(newsItems);
+            await using var sqlServerNewsContext = new SqlServerNewsContext(Config);
+            await using var postgresNewsContext = new PgVectorPostgresNewsContext(Config);
 
-            AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {newsItems.Count} items in {stopwatch.Elapsed}, enter search text {Environment.NewLine}[/]");
+            await SaveToDatabase(newsItems, sqlServerNewsContext, postgresNewsContext);
 
-            return newsItems;
+            AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {newsItems.Count} items in {stopwatch.Elapsed}[/]");
         }
 
         private static async Task ImportEmbeddingsWithOpenAI(EmbeddingClient client)
         {
             var lines = File.ReadLines("News.json");
+            var stopwatch = Stopwatch.StartNew();
 
             var chunks = lines
                 .Select(line => JsonSerializer.Deserialize<NewsItem>(line, JsonOptions)!)
@@ -202,24 +146,22 @@ namespace SemanticSearchDemo
                     return items;
                 }).SelectMany(items => items).ToList();
 
-            await using var context = new OpenAiPostgresNewsContext(Config);
-            var created = await context.Database.EnsureCreatedAsync();
-            if (created)
-            {
-                context.NewsItems.AddRange(newsItems);
-                await context.SaveChangesAsync(); 
-            }
+            stopwatch.Stop();
+
+            await using var postgresNewsContext = new OpenAiPostgresNewsContext(Config);
+
+            await SaveToDatabase(newsItems, postgresNewsContext);
+
+            AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {newsItems.Count} items in {stopwatch.Elapsed}[/]");
         }
 
-        private static async Task SaveToDatabase(List<NewsItem> newsItems)
+        private static async Task SaveToDatabase(List<NewsItem> newsItems, params NewsItemsBaseContext[] databases)
         {
-            await using var sqlServerContext = new SqlServerNewsContext(Config);
-            sqlServerContext.NewsItems.AddRange(newsItems);
-            await sqlServerContext.SaveChangesAsync();
-
-            await using var postgresContext = new PgVectorPostgresNewsContext(Config);
-            postgresContext.NewsItems.AddRange(newsItems);
-            await postgresContext.SaveChangesAsync();
+            foreach (var database in databases)
+            {
+                database.NewsItems.AddRange(newsItems);
+                await database.SaveChangesAsync();
+            }
         }
     }
 }

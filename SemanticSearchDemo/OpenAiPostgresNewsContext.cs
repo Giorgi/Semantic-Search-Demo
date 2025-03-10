@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace SemanticSearchDemo;
 
-class OpenAiPostgresNewsContext(IConfiguration config) : DbContext
+class OpenAiPostgresNewsContext(IConfiguration config) : NewsItemsBaseContext
 {
     public OpenAiPostgresNewsContext() : this(null)
     {
