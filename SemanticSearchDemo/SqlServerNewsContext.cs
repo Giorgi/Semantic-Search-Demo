@@ -14,6 +14,7 @@ class SqlServerNewsContext(IConfiguration config) : NewsItemsBaseContext
     {
         modelBuilder.Entity<NewsItem>().ToTable("NewsItems");
         modelBuilder.Entity<NewsItem>().Ignore(item => item.Embedding);
+        modelBuilder.Entity<NewsItem>().Ignore(item => item.EmbeddingData);
         modelBuilder.Entity<NewsItem>().Ignore(item => item.EmbeddingVector);
 
         modelBuilder.Entity<NewsItem>().Property(item => item.Link).HasMaxLength(400);
@@ -22,6 +23,4 @@ class SqlServerNewsContext(IConfiguration config) : NewsItemsBaseContext
         modelBuilder.Entity<NewsItem>().Property(item => item.ShortDescription).HasMaxLength(4000);
         modelBuilder.Entity<NewsItem>().Property(item => item.Authors).HasMaxLength(400);
     }
-
-    public DbSet<NewsItem> NewsItems { get; set; }
 }

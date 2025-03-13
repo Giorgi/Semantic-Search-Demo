@@ -21,6 +21,7 @@ class PgVectorPostgresNewsContext(IConfiguration config) : NewsItemsBaseContext
 
         modelBuilder.Entity<NewsItem>().ToTable("NewsItems");
         modelBuilder.Entity<NewsItem>().Ignore(item => item.Embedding);
+        modelBuilder.Entity<NewsItem>().Ignore(item => item.EmbeddingData);
         modelBuilder.Entity<NewsItem>().Ignore(item => item.EmbeddingBuffer);
 
         modelBuilder.Entity<NewsItem>().Property(item => item.EmbeddingVector).HasColumnType("vector(384)");
@@ -36,6 +37,4 @@ class PgVectorPostgresNewsContext(IConfiguration config) : NewsItemsBaseContext
             .HasMethod("hnsw")
             .HasOperators("vector_cosine_ops");
     }
-
-    public DbSet<NewsItem> NewsItems { get; set; }
 }

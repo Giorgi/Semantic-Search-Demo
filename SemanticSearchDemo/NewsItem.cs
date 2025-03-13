@@ -18,4 +18,7 @@ public class NewsItem
     public byte[] EmbeddingBuffer { get; set; }
 
     public Vector? EmbeddingVector { get; set; }
+
+    //Used by Azure SQL Data vector data type
+    public float[] EmbeddingData { get; set; }
 }

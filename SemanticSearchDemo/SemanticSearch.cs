@@ -37,14 +37,19 @@ class SemanticSearch(IConfiguration config)
             var (stopwatch, results) = SearchInMemory(query, newsItems);
             RenderResults(stopwatch, results, "Searching in-memory");
 
+            var searchQuery = await openAIClient.GenerateEmbeddingAsync(prompt);
+
+            (stopwatch, results) = await SearchInAzureSqlOpenAI(new Vector(searchQuery.Value.ToFloats()));
+            RenderResults(stopwatch, results, "Searching in database - OpenAI embeddings");
+
+
             #region PostgreSQL
 
-            (stopwatch, results) = await SearchInPostgres(new Vector(query.Values));
-            RenderResults(stopwatch, results, "Searching in database - local embeddings ");
+            //(stopwatch, results) = await SearchInPostgres(new Vector(query.Values));
+            //RenderResults(stopwatch, results, "Searching in database - local embeddings ");
 
-            var searchQuery = await openAIClient.GenerateEmbeddingAsync(prompt);
-            (stopwatch, results) = await SearchInPostgresOpenAI(new Vector(searchQuery.Value.ToFloats()));
-            RenderResults(stopwatch, results, "Searching in database - OpenAI embeddings"); 
+            //(stopwatch, results) = await SearchInPostgresOpenAI(new Vector(searchQuery.Value.ToFloats()));
+            //RenderResults(stopwatch, results, "Searching in database - OpenAI embeddings"); 
             
             #endregion
         } while (true);
@@ -60,6 +65,25 @@ class SemanticSearch(IConfiguration config)
             .OrderBy(item => item.EmbeddingVector!.CosineDistance(query))
             .Take(10)
             .Select(item => new { item, distance = item.EmbeddingVector!.CosineDistance(query) });
+        var matches = await queryable.ToListAsync();
+
+        stopwatch.Stop();
+
+        var results = matches.Select(arg => new SimilarityScore<NewsItem>(1 - (float)arg.distance, arg.item)).ToArray();
+
+        return (stopwatch, results);
+    }
+
+    private async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInAzureSqlOpenAI(Vector query)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        await using var context = new AzureSqlServerNewsContext(config);
+
+        var queryable = context.NewsItems
+            .OrderBy(item => EF.Functions.VectorDistance("cosine",item.EmbeddingData, query.ToArray()))
+            .Take(10)
+            .Select(item => new { item, distance = EF.Functions.VectorDistance("cosine", item.EmbeddingData, query.ToArray()) });
         var matches = await queryable.ToListAsync();
 
         stopwatch.Stop();

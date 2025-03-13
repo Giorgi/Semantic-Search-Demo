@@ -11,9 +11,9 @@ namespace SemanticSearchDemo
 {
     internal class Program
     {
-        private const string IndexLocalModel = "Index data with a local model";
-        private const string IndexOpenAI = "Index data with OpenAI";
         private const string Search = "Search";
+        private const string IndexOpenAI = "Index data with OpenAI";
+        private const string IndexLocalModel = "Index data with a local model";
 
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
         {
@@ -140,6 +140,7 @@ namespace SemanticSearchDemo
 
                     for (int index = 0; index < items.Length; index++)
                     {
+                        items[index].EmbeddingData = embeddings.Value[index].ToFloats().ToArray();
                         items[index].EmbeddingVector = new Vector(embeddings.Value[index].ToFloats());
                     }
 
@@ -149,8 +150,9 @@ namespace SemanticSearchDemo
             stopwatch.Stop();
 
             await using var postgresNewsContext = new OpenAiPostgresNewsContext(Config);
+            await using var azureSqlServerNewsContext = new AzureSqlServerNewsContext(Config);
 
-            await SaveToDatabase(newsItems, postgresNewsContext);
+            await SaveToDatabase(newsItems, azureSqlServerNewsContext, postgresNewsContext);
 
             AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {newsItems.Count} items in {stopwatch.Elapsed}[/]");
         }
