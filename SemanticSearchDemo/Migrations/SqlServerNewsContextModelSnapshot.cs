@@ -43,9 +43,9 @@ namespace SemanticSearchDemo.Migrations
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
-                    b.PrimitiveCollection<string>("EmbeddingData")
+                    b.PrimitiveCollection<string>("Embedding")
                         .IsRequired()
-                        .HasColumnType("vector(384)");
+                        .HasColumnType("vector(1024)");
 
                     b.Property<string>("Headline")
                         .IsRequired()

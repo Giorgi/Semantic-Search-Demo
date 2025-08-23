@@ -15,6 +15,7 @@
   
   <ItemGroup>
     <PackageReference Include="EFCore.SqlServer.VectorSearch" Version="9.0.0-preview.2" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.8">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

@@ -12,7 +12,7 @@ using SemanticSearchDemo;
 namespace SemanticSearchDemo.Migrations
 {
     [DbContext(typeof(SqlServerNewsContext))]
-    [Migration("20250822180248_InitialCreate")]
+    [Migration("20250823170001_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -46,9 +46,9 @@ namespace SemanticSearchDemo.Migrations
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
-                    b.PrimitiveCollection<string>("EmbeddingData")
+                    b.PrimitiveCollection<string>("Embedding")
                         .IsRequired()
-                        .HasColumnType("vector(384)");
+                        .HasColumnType("vector(1024)");
 
                     b.Property<string>("Headline")
                         .IsRequired()

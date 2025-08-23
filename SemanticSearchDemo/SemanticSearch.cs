@@ -1,8 +1,12 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.Data;
+using Microsoft.Data.SqlClient;
+using Microsoft.Data.SqlTypes;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using OllamaSharp;
 using Spectre.Console;
+using System.Data;
 using System.Diagnostics;
 using System.Numerics.Tensors;
 
@@ -36,6 +40,9 @@ class SemanticSearch(IConfiguration config)
 
             (stopwatch, results) = await SearchInDatabase(query);
             RenderResults(stopwatch, results, "Searching in SQL Server 2025");
+
+            (stopwatch, results) = await SearchInDatabaseWithIndex(query);
+            RenderResults(stopwatch, results, "Searching in SQL Server 2025 with DiskAnn index");
         } while (true);
     }
 
@@ -46,16 +53,68 @@ class SemanticSearch(IConfiguration config)
         await using var context = new SqlServerNewsContext(config);
 
         var queryable = context.NewsItems
-            .OrderBy(item => EF.Functions.VectorDistance("cosine", item.EmbeddingData, query.ToArray()))
+            .OrderBy(item => EF.Functions.VectorDistance("cosine", item.Embedding, query.ToArray()))
             .Take(10)
-            .Select(item => new { item, distance = EF.Functions.VectorDistance("cosine", item.EmbeddingData, query.ToArray()) });
-        
+            .Select(item => new { item, distance = EF.Functions.VectorDistance("cosine", item.Embedding, query.ToArray()) });
+
         var matches = await queryable.ToListAsync();
 
         stopwatch.Stop();
 
-        var results = matches.Select(arg => new SimilarityScore<NewsItem>(arg.item, 1 - (float)arg.distance)).ToList();
+        var results = matches.Select(arg => new SimilarityScore<NewsItem>(arg.item, 1 - arg.distance)).ToList();
 
+        return (stopwatch, results);
+    }
+
+    private async Task<(Stopwatch stopwatch, List<SimilarityScore<NewsItem>> results)> SearchInDatabaseWithIndex(ReadOnlyMemory<float> query)
+    {
+        var sql = """
+                  SELECT *
+                  FROM VECTOR_SEARCH(
+                      table = NewsItems AS t,
+                      column = Embedding,
+                      similar_to = @query,
+                      metric = 'cosine',
+                      top_n = @topN
+                  ) AS s
+                  ORDER BY s.distance, t.Headline;
+                  """;
+
+        var stopwatch = Stopwatch.StartNew();
+
+        var results = new List<SimilarityScore<NewsItem>>();
+
+        await using (var connection = new SqlConnection(config.GetConnectionString("SqlServer")))
+        {
+            await connection.OpenAsync();
+
+            await using (var command = new SqlCommand(sql, connection))
+            {
+                command.Parameters.Add(new SqlParameter("@topN", SqlDbType.Int) { Value = 10 });
+                command.Parameters.Add(new SqlParameter("@query", SqlDbTypeExtensions.Vector)
+                {
+                    Value = new SqlVector<float>(query)
+                });
+
+                await using (var reader = await command.ExecuteReaderAsync())
+                {
+                    while (reader.Read())
+                    {
+                        var item = new NewsItem
+                        {
+                            Headline = reader.GetString("Headline"),
+                            Authors = reader.GetString("Authors"),
+                            Category = reader.GetString("Category"),
+                            Link = reader.GetString("Link"),
+                            ShortDescription = reader.GetString("ShortDescription"),
+                        };
+                        results.Add(new SimilarityScore<NewsItem>(item, 1 - reader.GetDouble("distance")));
+                    }
+                }
+            }
+        }
+
+        stopwatch.Stop();
         return (stopwatch, results);
     }
 
@@ -63,7 +122,7 @@ class SemanticSearch(IConfiguration config)
     {
         var stopwatch = Stopwatch.StartNew();
 
-        var results = newsItems.Select(item => new SimilarityScore<NewsItem>(item, TensorPrimitives.CosineSimilarity(item.EmbeddingData, query.ToArray())))
+        var results = newsItems.Select(item => new SimilarityScore<NewsItem>(item, TensorPrimitives.CosineSimilarity(item.Embedding, query.ToArray())))
                                .OrderByDescending(match => match.Similarity)
                                .Take(10)
                                .ToList();
@@ -98,4 +157,4 @@ class SemanticSearch(IConfiguration config)
     }
 }
 
-public record SimilarityScore<T>(T Item, float Similarity);
+public record SimilarityScore<T>(T Item, double Similarity);

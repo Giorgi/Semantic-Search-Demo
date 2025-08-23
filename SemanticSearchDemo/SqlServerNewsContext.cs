@@ -16,7 +16,7 @@ class SqlServerNewsContext(IConfiguration config) : DbContext
     {
         modelBuilder.Entity<NewsItem>().ToTable("NewsItems");
 
-        modelBuilder.Entity<NewsItem>().Property(item => item.EmbeddingData).HasColumnType("vector(384)");
+        modelBuilder.Entity<NewsItem>().Property(item => item.Embedding).HasColumnType("vector(1024)");
 
         modelBuilder.Entity<NewsItem>().Property(item => item.Link).HasMaxLength(400);
         modelBuilder.Entity<NewsItem>().Property(item => item.Headline).HasMaxLength(400);

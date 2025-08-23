@@ -23,7 +23,7 @@ namespace SemanticSearchDemo.Migrations
                     ShortDescription = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false),
                     Authors = table.Column<string>(type: "nvarchar(400)", maxLength: 400, nullable: false),
                     Date = table.Column<DateOnly>(type: "date", nullable: false),
-                    EmbeddingData = table.Column<string>(type: "vector(384)", nullable: false)
+                    Embedding = table.Column<string>(type: "vector(1024)", nullable: false)
                 },
                 constraints: table =>
                 {

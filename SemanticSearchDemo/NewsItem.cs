@@ -10,6 +10,5 @@ public class NewsItem
     public required string Authors { get; set; }
     public DateOnly Date { get; set; }
 
-    //Used by Azure SQL Data vector data type
-    public float[] EmbeddingData { get; set; }
+    public float[] Embedding { get; set; } = [];
 }
