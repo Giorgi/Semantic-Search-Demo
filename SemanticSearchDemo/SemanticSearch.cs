@@ -1,11 +1,10 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using OpenAI.Embeddings;
-using Pgvector;
-using Pgvector.EntityFrameworkCore;
-using SmartComponents.LocalEmbeddings;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+using OllamaSharp;
 using Spectre.Console;
 using System.Diagnostics;
-using Microsoft.Extensions.Configuration;
+using System.Numerics.Tensors;
 
 namespace SemanticSearchDemo;
 
@@ -13,13 +12,11 @@ class SemanticSearch(IConfiguration config)
 {
     public async Task HandleSearch()
     {
-        using var embedder = new LocalEmbedder();
-
-        EmbeddingClient openAIClient = new(model: "text-embedding-3-small", config["OpenAI:ApiKey"]);
+        using IEmbeddingGenerator<string, Embedding<float>> embedder = new OllamaApiClient(new Uri("http://localhost:11434/"), Program.Model);
 
         AnsiConsole.MarkupLine("Loading data in memory");
 
-        var newsItems = await GetNewsItems();
+        var newsItems = GetNewsItems();
 
         do
         {
@@ -32,98 +29,51 @@ class SemanticSearch(IConfiguration config)
                 return;
             }
 
-            var query = embedder.Embed(prompt);
+            var query = await embedder.GenerateVectorAsync(prompt);
 
             var (stopwatch, results) = SearchInMemory(query, newsItems);
             RenderResults(stopwatch, results, "Searching in-memory");
 
-            var searchQuery = await openAIClient.GenerateEmbeddingAsync(prompt);
-
-            (stopwatch, results) = await SearchInAzureSqlOpenAI(new Vector(searchQuery.Value.ToFloats()));
-            RenderResults(stopwatch, results, "Searching in database - OpenAI embeddings");
-
-
-            #region PostgreSQL
-
-            //(stopwatch, results) = await SearchInPostgres(new Vector(query.Values));
-            //RenderResults(stopwatch, results, "Searching in database - local embeddings ");
-
-            //(stopwatch, results) = await SearchInPostgresOpenAI(new Vector(searchQuery.Value.ToFloats()));
-            //RenderResults(stopwatch, results, "Searching in database - OpenAI embeddings"); 
-            
-            #endregion
+            (stopwatch, results) = await SearchInDatabase(query);
+            RenderResults(stopwatch, results, "Searching in SQL Server 2025");
         } while (true);
     }
 
-    private async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInPostgres(Vector query)
+    private async Task<(Stopwatch stopwatch, List<SimilarityScore<NewsItem>> results)> SearchInDatabase(ReadOnlyMemory<float> query)
     {
         var stopwatch = Stopwatch.StartNew();
 
-        await using var context = new PgVectorPostgresNewsContext(config);
+        await using var context = new SqlServerNewsContext(config);
 
         var queryable = context.NewsItems
-            .OrderBy(item => item.EmbeddingVector!.CosineDistance(query))
-            .Take(10)
-            .Select(item => new { item, distance = item.EmbeddingVector!.CosineDistance(query) });
-        var matches = await queryable.ToListAsync();
-
-        stopwatch.Stop();
-
-        var results = matches.Select(arg => new SimilarityScore<NewsItem>(1 - (float)arg.distance, arg.item)).ToArray();
-
-        return (stopwatch, results);
-    }
-
-    private async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInAzureSqlOpenAI(Vector query)
-    {
-        var stopwatch = Stopwatch.StartNew();
-
-        await using var context = new AzureSqlServerNewsContext(config);
-
-        var queryable = context.NewsItems
-            .OrderBy(item => EF.Functions.VectorDistance("cosine",item.EmbeddingData, query.ToArray()))
+            .OrderBy(item => EF.Functions.VectorDistance("cosine", item.EmbeddingData, query.ToArray()))
             .Take(10)
             .Select(item => new { item, distance = EF.Functions.VectorDistance("cosine", item.EmbeddingData, query.ToArray()) });
+        
         var matches = await queryable.ToListAsync();
 
         stopwatch.Stop();
 
-        var results = matches.Select(arg => new SimilarityScore<NewsItem>(1 - (float)arg.distance, arg.item)).ToArray();
+        var results = matches.Select(arg => new SimilarityScore<NewsItem>(arg.item, 1 - (float)arg.distance)).ToList();
 
         return (stopwatch, results);
     }
 
-    private async Task<(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results)> SearchInPostgresOpenAI(Vector query)
+    private static (Stopwatch stopwatch, List<SimilarityScore<NewsItem>> results) SearchInMemory(ReadOnlyMemory<float> query, List<NewsItem> newsItems)
     {
         var stopwatch = Stopwatch.StartNew();
 
-        await using var context = new OpenAiPostgresNewsContext(config);
-
-        var queryable = context.NewsItems
-            .OrderBy(item => item.EmbeddingVector!.CosineDistance(query))
-            .Take(10)
-            .Select(item => new { item, distance = item.EmbeddingVector!.CosineDistance(query) });
-        var matches = await queryable.ToListAsync();
-
-        stopwatch.Stop();
-
-        var results = matches.Select(arg => new SimilarityScore<NewsItem>(1 - (float)arg.distance, arg.item)).ToArray();
-
-        return (stopwatch, results);
-    }
-
-    private static (Stopwatch stopwatch, SimilarityScore<NewsItem>[] results) SearchInMemory(EmbeddingF32 query, List<NewsItem> newsItems)
-    {
-        var stopwatch = Stopwatch.StartNew();
-
-        var results = LocalEmbedder.FindClosestWithScore(query, newsItems.Select(item => (item, item.Embedding)), 10);
+        var results = newsItems.Select(item => new SimilarityScore<NewsItem>(item, TensorPrimitives.CosineSimilarity(item.EmbeddingData, query.ToArray())))
+                               .OrderByDescending(match => match.Similarity)
+                               .Take(10)
+                               .ToList();
 
         stopwatch.Stop();
 
         return (stopwatch, results);
     }
 
-    private static void RenderResults(Stopwatch stopwatch, SimilarityScore<NewsItem>[] results, string title = "")
+    private static void RenderResults(Stopwatch stopwatch, List<SimilarityScore<NewsItem>> results, string title = "")
     {
         var table = new Table();
 
@@ -140,16 +90,12 @@ class SemanticSearch(IConfiguration config)
         AnsiConsole.WriteLine();
     }
 
-    private async Task<List<NewsItem>> GetNewsItems()
+    private List<NewsItem> GetNewsItems()
     {
-        await using var context = new SqlServerNewsContext(config);
-        var items = await context.NewsItems.ToListAsync();
+        using var context = new SqlServerNewsContext(config);
 
-        foreach (var item in items)
-        {
-            item.Embedding = new EmbeddingF32(item.EmbeddingBuffer);
-        }
-
-        return items;
+        return context.NewsItems.ToList();
     }
 }
+
+public record SimilarityScore<T>(T Item, float Similarity);

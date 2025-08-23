@@ -1,7 +1,7 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+using OllamaSharp;
 using OpenAI.Embeddings;
-using Pgvector;
-using SmartComponents.LocalEmbeddings;
 using Spectre.Console;
 using System.Diagnostics;
 using System.Reflection;
@@ -13,7 +13,8 @@ namespace SemanticSearchDemo
     {
         private const string Search = "Search";
         private const string IndexOpenAI = "Index data with OpenAI";
-        private const string IndexLocalModel = "Index data with a local model";
+        private const string IndexLocalModel = "Index data with a local model (Ollama)";
+        internal const string Model = "all-minilm";
 
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
         {
@@ -42,7 +43,7 @@ namespace SemanticSearchDemo
                 switch (choice)
                 {
                     case IndexLocalModel:
-                        await HandleLocalEmbedderImport();
+                        await HandleOllamaImport();
                         break;
                     case IndexOpenAI:
                         await HandleOpenAIImport();
@@ -56,9 +57,11 @@ namespace SemanticSearchDemo
             }
         }
 
-        private static async Task HandleLocalEmbedderImport()
+        private static async Task HandleOllamaImport()
         {
             await using var context = new SqlServerNewsContext(Config);
+
+            await context.Database.EnsureCreatedAsync();
 
             if (context.NewsItems.Any())
             {
@@ -66,104 +69,58 @@ namespace SemanticSearchDemo
                 return;
             }
 
-            using var embedder = new LocalEmbedder(); AnsiConsole.MarkupLine("[Green]Indexing data ...[/]");
-            await ImportEmbeddingsWithLocalModel(embedder);
+            AnsiConsole.MarkupLine("[Green]Indexing data ...[/]");
+
+            using IEmbeddingGenerator<string, Embedding<float>> generator = new OllamaApiClient(new Uri("http://localhost:11434/"), Model);
+
+            await ImportEmbeddings(generator);
         }
 
         private static async Task HandleOpenAIImport()
         {
-            await using var context = new OpenAiPostgresNewsContext(Config);
+            using IEmbeddingGenerator<string, Embedding<float>> generator = new EmbeddingClient("text-embedding-3-small", Config["OpenAI:ApiKey"])
+                                                                                .AsIEmbeddingGenerator();
 
-            if (context.NewsItems.Any())
-            {
-                AnsiConsole.MarkupLine("[Green]Data already indexed[/]");
-                return;
-            }
-
-            EmbeddingClient openAIClient = new(model: "text-embedding-3-small", Config["OpenAI:ApiKey"]);
-            await ImportEmbeddingsWithOpenAI(openAIClient);
+            await ImportEmbeddings(generator);
         }
 
 
-        private static async Task ImportEmbeddingsWithLocalModel(LocalEmbedder embedder)
+        private static async Task ImportEmbeddings(IEmbeddingGenerator<string, Embedding<float>> embedder)
         {
             var lines = File.ReadLines("News.json");
 
             int count = 0;
             var stopwatch = Stopwatch.StartNew();
 
-            var newsItems = lines
-                .Select(line => JsonSerializer.Deserialize<NewsItem>(line, JsonOptions))
+            var chunks = lines
+                .Select(line => JsonSerializer.Deserialize<NewsItem>(line, JsonOptions)!)
                 //.Take(1000)
-                .Where(item => Categories.Contains(item!.Category))
-                .Select(item =>
+                .Where(item => Categories.Contains(item.Category) && !string.IsNullOrEmpty(item.Headline))
+                .Chunk(1000).ToList();
+
+            foreach (var chunk in chunks)
+            {
+                count++;
+                Console.WriteLine("Processing chunk {0}", count);
+
+                var embeddings = await embedder.GenerateAsync(chunk.Select(item => item.Headline));
+
+                foreach (var (item, embedding) in chunk.Zip(embeddings))
                 {
-                    var embedding = embedder.Embed(item!.Headline);
+                    item.EmbeddingData = embedding.Vector.ToArray();
+                }
+            }
 
-                    item.Embedding = embedding;
-                    item.EmbeddingBuffer = embedding.Buffer.ToArray();
-                    item.EmbeddingVector = new Vector(embedding.Values);
-
-                    count++;
-                    if (count % 10000 == 0)
-                    {
-                        AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {count} items[/]");
-                    }
-
-                    return item;
-                }).ToList();
+            var newsItems = chunks.SelectMany(items => items).ToList();
 
             stopwatch.Stop();
 
             await using var sqlServerNewsContext = new SqlServerNewsContext(Config);
-            await using var postgresNewsContext = new PgVectorPostgresNewsContext(Config);
 
-            await SaveToDatabase(newsItems, sqlServerNewsContext, postgresNewsContext);
-
-            AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {newsItems.Count} items in {stopwatch.Elapsed}[/]");
-        }
-
-        private static async Task ImportEmbeddingsWithOpenAI(EmbeddingClient client)
-        {
-            var lines = File.ReadLines("News.json");
-            var stopwatch = Stopwatch.StartNew();
-
-            var chunks = lines
-                .Select(line => JsonSerializer.Deserialize<NewsItem>(line, JsonOptions)!)
-                .Where(item => Categories.Contains(item.Category) && !string.IsNullOrEmpty(item.Headline))
-                .Chunk(100);
-
-            var newsItems = chunks
-                .Select(items =>
-                {
-                    var embeddings = client.GenerateEmbeddings(items.Select(i => i.Headline));
-
-                    for (int index = 0; index < items.Length; index++)
-                    {
-                        items[index].EmbeddingData = embeddings.Value[index].ToFloats().ToArray();
-                        items[index].EmbeddingVector = new Vector(embeddings.Value[index].ToFloats());
-                    }
-
-                    return items;
-                }).SelectMany(items => items).ToList();
-
-            stopwatch.Stop();
-
-            await using var postgresNewsContext = new OpenAiPostgresNewsContext(Config);
-            await using var azureSqlServerNewsContext = new AzureSqlServerNewsContext(Config);
-
-            await SaveToDatabase(newsItems, azureSqlServerNewsContext, postgresNewsContext);
+            sqlServerNewsContext.NewsItems.AddRange(newsItems);
+            await sqlServerNewsContext.SaveChangesAsync();
 
             AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {newsItems.Count} items in {stopwatch.Elapsed}[/]");
-        }
-
-        private static async Task SaveToDatabase(List<NewsItem> newsItems, params NewsItemsBaseContext[] databases)
-        {
-            foreach (var database in databases)
-            {
-                database.NewsItems.AddRange(newsItems);
-                await database.SaveChangesAsync();
-            }
         }
     }
 }
