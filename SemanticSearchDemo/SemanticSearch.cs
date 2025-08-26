@@ -68,51 +68,37 @@ class SemanticSearch(IConfiguration config)
 
     private async Task<(Stopwatch stopwatch, List<SimilarityScore<NewsItem>> results)> SearchInDatabaseWithIndex(ReadOnlyMemory<float> query)
     {
-        var sql = """
-                  SELECT *
-                  FROM VECTOR_SEARCH(
-                      table = NewsItems AS t,
-                      column = Embedding,
-                      similar_to = @query,
-                      metric = 'cosine',
-                      top_n = @topN
-                  ) AS s
-                  ORDER BY s.distance, t.Headline;
-                  """;
+        var topN = new SqlParameter("@topN", SqlDbType.Int) { Value = 10 };
+        var search = new SqlParameter("@query", SqlDbTypeExtensions.Vector)
+        {
+            Value = new SqlVector<float>(query)
+        };
 
+        FormattableString sql = $"""
+                                 SELECT *
+                                 FROM VECTOR_SEARCH(
+                                     table = NewsItems AS t,
+                                     column = Embedding,
+                                     similar_to = {search},
+                                     metric = 'cosine',
+                                     top_n = {topN}
+                                 ) AS s
+                                 """;
         var stopwatch = Stopwatch.StartNew();
 
-        var results = new List<SimilarityScore<NewsItem>>();
+        await using var context = new SqlServerNewsContext(config);
 
-        await using (var connection = new SqlConnection(config.GetConnectionString("SqlServer")))
-        {
-            await connection.OpenAsync();
-
-            await using (var command = new SqlCommand(sql, connection))
+        var queryable = context.Database.SqlQuery<NewsItemDistance>(sql).OrderBy(d => d.Distance)
+            .Select(d => new SimilarityScore<NewsItem>(new NewsItem
             {
-                command.Parameters.Add(new SqlParameter("@topN", SqlDbType.Int) { Value = 10 });
-                command.Parameters.Add(new SqlParameter("@query", SqlDbTypeExtensions.Vector)
-                {
-                    Value = new SqlVector<float>(query)
-                });
+                Headline = d.Headline,
+                Authors = d.Authors,
+                Category = d.Category,
+                Link = d.Link,
+                ShortDescription = d.ShortDescription,
+            }, 1 - d.Distance));
 
-                await using (var reader = await command.ExecuteReaderAsync())
-                {
-                    while (reader.Read())
-                    {
-                        var item = new NewsItem
-                        {
-                            Headline = reader.GetString("Headline"),
-                            Authors = reader.GetString("Authors"),
-                            Category = reader.GetString("Category"),
-                            Link = reader.GetString("Link"),
-                            ShortDescription = reader.GetString("ShortDescription"),
-                        };
-                        results.Add(new SimilarityScore<NewsItem>(item, 1 - reader.GetDouble("distance")));
-                    }
-                }
-            }
-        }
+        var results = await queryable.ToListAsync();
 
         stopwatch.Stop();
         return (stopwatch, results);

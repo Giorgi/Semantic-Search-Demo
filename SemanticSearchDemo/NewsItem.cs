@@ -12,3 +12,10 @@ public class NewsItem
 
     public float[] Embedding { get; set; } = [];
 }
+
+class NewsItemDistance : NewsItem
+{
+    public double Distance { get; set; }
+
+    public double Similarity => 1 - Distance;
+}
