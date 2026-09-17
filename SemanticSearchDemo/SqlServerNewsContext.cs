@@ -9,14 +9,14 @@ class SqlServerNewsContext(IConfiguration config) : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        optionsBuilder.UseSqlServer(config.GetConnectionString("SqlServer"), o => o.UseVectorSearch());
+        optionsBuilder.UseSqlServer(config.GetConnectionString("SqlServer"), o => o.UseVectorSearch().MaxBatchSize(256));
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<NewsItem>().ToTable("NewsItems");
 
-        modelBuilder.Entity<NewsItem>().Property(item => item.Embedding).HasColumnType("vector(1024)");
+        modelBuilder.Entity<NewsItem>().Property(item => item.Embedding).HasColumnType("vector(1536)");
 
         modelBuilder.Entity<NewsItem>().Property(item => item.Link).HasMaxLength(400);
         modelBuilder.Entity<NewsItem>().Property(item => item.Headline).HasMaxLength(400);

@@ -10,7 +10,7 @@ public class NewsItem
     public required string Authors { get; set; }
     public DateOnly Date { get; set; }
 
-    public float[] Embedding { get; set; } = [];
+    public float[]? Embedding { get; set; }
 }
 
 class NewsItemDistance : NewsItem

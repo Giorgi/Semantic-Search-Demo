@@ -6,6 +6,7 @@ using Spectre.Console;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace SemanticSearchDemo;
 
@@ -14,6 +15,7 @@ internal class Program
     private const string Search = "Search";
     private const string IndexOpenAI = "Index data with OpenAI";
     private const string IndexLocalModel = "Index data with a local model (Ollama)";
+    private const string LoadTextOnly = "Load data without embeddings (embed in the database)";
     internal const string Model = "snowflake-arctic-embed2";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -38,7 +40,7 @@ internal class Program
                 new SelectionPrompt<string>()
                     .Title("What would you like to do?")
                     .PageSize(10)
-                    .AddChoices(IndexLocalModel, IndexOpenAI, Search, "Quit"));
+                    .AddChoices(IndexLocalModel, IndexOpenAI, LoadTextOnly, Search, "Quit"));
 
             switch (choice)
             {
@@ -47,6 +49,9 @@ internal class Program
                     break;
                 case IndexOpenAI:
                     await HandleOpenAIImport();
+                    break;
+                case LoadTextOnly:
+                    await HandleTextOnlyImport();
                     break;
                 case Search:
                     await semanticSearch.HandleSearch();
@@ -84,8 +89,19 @@ internal class Program
         await ImportEmbeddings(generator);
     }
 
+    private static async Task HandleTextOnlyImport()
+    {
+        await using var context = new SqlServerNewsContext(Config);
 
-    private static async Task ImportEmbeddings(IEmbeddingGenerator<string, Embedding<float>> embedder)
+        var existing = await context.NewsItems.CountAsync();
+
+        AnsiConsole.MarkupLineInterpolated($"[Green]{existing} rows already loaded - resuming after them[/]");
+
+        await ImportEmbeddings(null, existing);
+    }
+
+
+    private static async Task ImportEmbeddings(IEmbeddingGenerator<string, Embedding<float>>? embedder, int skip = 0)
     {
         var lines = File.ReadLines("News.json");
 
@@ -96,12 +112,18 @@ internal class Program
             .Select(line => JsonSerializer.Deserialize<NewsItem>(line, JsonOptions)!)
             //.Take(1000)
             .Where(item => Categories.Contains(item.Category) && !string.IsNullOrEmpty(item.Headline))
+            .Skip(skip)
             .Chunk(1000).ToList();
 
         foreach (var chunk in chunks)
         {
             count++;
             Console.WriteLine("Processing chunk {0}", count);
+
+            if (embedder is null)
+            {
+                continue;
+            }
 
             var embeddings = await embedder.GenerateAsync(chunk.Select(item => item.Headline));
 
@@ -111,15 +133,22 @@ internal class Program
             }
         }
 
-        var newsItems = chunks.SelectMany(items => items).ToList();
+        await using var sqlServerNewsContext = new SqlServerNewsContext(Config);
+
+        var total = skip;
+
+        foreach (var chunk in chunks)
+        {
+            sqlServerNewsContext.NewsItems.AddRange(chunk);
+            await sqlServerNewsContext.SaveChangesAsync();
+            sqlServerNewsContext.ChangeTracker.Clear();
+
+            total += chunk.Length;
+            Console.WriteLine("Saved {0} rows", total);
+        }
 
         stopwatch.Stop();
 
-        await using var sqlServerNewsContext = new SqlServerNewsContext(Config);
-
-        sqlServerNewsContext.NewsItems.AddRange(newsItems);
-        await sqlServerNewsContext.SaveChangesAsync();
-
-        AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {newsItems.Count} items in {stopwatch.Elapsed}[/]");
+        AnsiConsole.MarkupLineInterpolated($"[Green]Indexed {total} items in {stopwatch.Elapsed}[/]");
     }
 }

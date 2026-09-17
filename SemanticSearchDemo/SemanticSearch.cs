@@ -18,9 +18,9 @@ class SemanticSearch(IConfiguration config)
     {
         using IEmbeddingGenerator<string, Embedding<float>> embedder = new OllamaApiClient(new Uri("http://localhost:11434/"), Program.Model);
 
-        AnsiConsole.MarkupLine("Loading data in memory");
+        //AnsiConsole.MarkupLine("Loading data in memory");
 
-        var newsItems = GetNewsItems();
+        //var newsItems = GetNewsItems();
 
         do
         {
@@ -35,10 +35,10 @@ class SemanticSearch(IConfiguration config)
 
             var query = await embedder.GenerateVectorAsync(prompt);
 
-            var (stopwatch, results) = SearchInMemory(query, newsItems);
-            RenderResults(stopwatch, results, "Searching in-memory");
+            //var (stopwatch, results) = SearchInMemory(query, newsItems);
+            //RenderResults(stopwatch, results, "Searching in-memory");
 
-            (stopwatch, results) = await SearchInDatabase(query);
+            var (stopwatch, results) = await SearchInDatabase(query);
             RenderResults(stopwatch, results, "Searching in SQL Server 2025");
 
             (stopwatch, results) = await SearchInDatabaseWithIndex(query);
