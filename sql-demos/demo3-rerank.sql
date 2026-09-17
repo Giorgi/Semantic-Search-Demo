@@ -1,5 +1,5 @@
 -- DEMO 3 (FINALE): reranking from T-SQL - Cohere Rerank v4.0-fast via sp_invoke_external_rest_endpoint
--- Paste <RERANK-KEY> from C:\Users\G.Dalakishvili\.fabcon\secrets.txt (setup section only)
+-- Fill <RERANK-KEY> with your Foundry deployment key (setup section only)
 
 -- One-time setup: credential for the Foundry endpoint (name must match the URL base)
 /*

@@ -1,7 +1,7 @@
 -- ============================================================================
 -- DEMO 1 SETUP - database-side embeddings in fabcon-demo
 -- Run section by section in SSMS connected to fabcon-demo (check the guard!).
--- TWO placeholders to paste from C:\Users\G.Dalakishvili\.fabcon\secrets.txt:
+-- TWO placeholders to fill with your own values:
 --   <MASTER-KEY-PASSWORD>  and  <API-KEY>
 -- Keep this file placeholder-only: it will end up in the public demo repo.
 -- Note: first statement resumes the paused db (~30-60s) - that is expected.
