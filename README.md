@@ -2,6 +2,7 @@
 
 > [!NOTE]
 > For pgvector demo, check out the [pgvector branch](https://github.com/Giorgi/Semantic-Search-Demo/tree/pgvector).
+> 
 > For the pure T-SQL SQL Server demo (embeddings, DiskANN vector index, and reranking all inside the database - as presented at FabCon Europe 2026), check out the [sql-server branch](https://github.com/Giorgi/Semantic-Search-Demo/tree/sql-server).
 
 A sample app showing how to use [Ollama](https://ollama.com/), [Microsoft.Extensions.AI](https://learn.microsoft.com/en-us/dotnet/ai/microsoft-extensions-ai)
